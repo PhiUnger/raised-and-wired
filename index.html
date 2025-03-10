@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenSenseMap - Live Sensor Data</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            margin: 20px; 
+        }
+
+        .chart-container { 
+            width: 90%; 
+            max-width: 800px; 
+            margin: 20px auto; 
+            position: relative; 
+        }
+
+        canvas { 
+            width: 100% !important; 
+            height: 400px !important;  /* 👈 Set a fixed height */
+        }
+    </style>
+</head>
+<body>
+    <h1>Live Sensor Data from OpenSenseMap</h1>
+
+    <div class="chart-container">
+        <h3>Temperature (°C)</h3>
+        <canvas id="tempChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h3>Humidity (%)</h3>
+        <canvas id="humidityChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h3>Light Brightness (Lux)</h3>
+        <canvas id="lightChart"></canvas>
+    </div>
+
+    <script>
+        const boxId = "67ced7745efb39000781a237"; // Your SenseBox ID
+        const sensors = {
+            temperature: "67ced7745efb39000781a238",
+            humidity: "67ced8595efb3900078339a4",
+            light: "67cf16785efb390007f0de2b"
+        };
+        const apiUrl = `https://api.opensensemap.org/boxes/${boxId}`;
+
+        async function fetchSensorData() {
+            try {
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+
+                const tempData = extractSensorData(data, sensors.temperature);
+                const humidityData = extractSensorData(data, sensors.humidity);
+                const lightData = extractSensorData(data, sensors.light);
+
+                updateChart(tempChart, tempData.timestamps, tempData.values);
+                updateChart(humidityChart, humidityData.timestamps, humidityData.values);
+                updateChart(lightChart, lightData.timestamps, lightData.values);
+            } catch (error) {
+                console.error("Error fetching data:", error);
+            }
+        }
+
+        function extractSensorData(data, sensorId) {
+            const sensor = data.sensors.find(s => s._id === sensorId);
+            if (!sensor) return { timestamps: [], values: [] };
+
+            const values = sensor.measurements.slice(-60 * 24); // Last 30 minutes
+            return {
+                timestamps: values.map(v => new Date(v.createdAt).toLocaleTimeString()),
+                values: values.map(v => parseFloat(v.value))
+            };
+        }
+
+        function createChart(ctx, label, type = "line") {
+            return new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        borderColor: type === "line" ? "blue" : "orange",
+                        backgroundColor: type === "bar" ? "rgba(255, 165, 0, 0.5)" : "transparent",
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: "Time" } },
+                        y: { title: { display: true, text: label } }
+                    }
+                }
+            });
+        }
+
+        function updateChart(chartObj, labels, data) {
+            if (chartObj.chart) {
+                chartObj.chart.destroy(); // Destroy the old chart before creating a new one
+            }
+            chartObj.chart = new Chart(chartObj.ctx, {
+                type: chartObj.type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: chartObj.label,
+                        data: data,
+                        borderColor: chartObj.type === "line" ? "blue" : "orange",
+                        backgroundColor: chartObj.type === "bar" ? "rgba(255, 165, 0, 0.5)" : "transparent",
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: "Time" } },
+                        y: { title: { display: true, text: chartObj.label } }
+                    }
+                }
+            });
+        }
+
+
+        // Initialize Charts
+        const tempChart = createChart(document.getElementById("tempChart").getContext("2d"), "Temperature (°C)");
+        const humidityChart = createChart(document.getElementById("humidityChart").getContext("2d"), "Humidity (%)");
+        const lightChart = createChart(document.getElementById("lightChart").getContext("2d"), "Light Brightness (Lux)", "bar");
+
+        // Fetch data initially and every 60 seconds
+        fetchSensorData();
+        setInterval(fetchSensorData, 60000);
+    </script>
+</body>
+</html>

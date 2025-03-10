@@ -1,0 +1,83 @@
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+
+# Build outputs
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+ipch/
+*.ilk
+*.obj
+*.pdb
+*.ipdb
+*.iobj
+*.tlb
+*.tlg
+*.log
+*.log2
+
+# NuGet packages
+*.nupkg
+packages/
+*.snupkg
+project.lock.json
+project.assets.json
+artifacts/
+__pycache__/
+python-packages/
+
+# Resharper, Rider, & other JetBrains IDEs
+.idea/
+*.DotSettings.user
+
+# .NET Core & ASP.NET
+appsettings.Development.json
+appsettings.Local.json
+appsettings.Production.json
+appsettings.Staging.json
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+*.swp
+*.swo
+*.swn
+/Thumbs.db
+
+# Logs & system files
+*.log
+*.tlog
+*.cache
+*.pid
+*.csv
+*.tmp
+*.bak
+*.orig
+
+# Ignore environment & editor settings
+.env
+node_modules/
+bower_components/
+.vscode/
+.history
+*.code-workspace
+
+# Ignore compiled TypeScript and JavaScript build outputs
+dist/
+out/

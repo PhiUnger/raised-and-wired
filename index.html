@@ -50,6 +50,11 @@
         };
         const apiUrl = `https://api.opensensemap.org/boxes/${boxId}`;
 
+        function formatLocalTime(utcString) {
+            const date = new Date(utcString);
+            return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        }
+
         async function fetchSensorData() {
             try {
                 const now = new Date();
@@ -79,11 +84,13 @@
                     return { timestamps: [], values: [] };
                 }
 
-                // Keep the last 30 readings (30 minutes if 1 per min)
-                const recentData = data.slice(-30);
+                // ✅ Sort data chronologically (oldest → newest)
+                const sortedData = data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+                // ✅ Extract timestamps and values
                 return {
-                    timestamps: recentData.map(d => new Date(d.createdAt).toLocaleTimeString()),
-                    values: recentData.map(d => parseFloat(d.value))
+                    timestamps: sortedData.map(d => formatLocalTime(d.createdAt)),
+                    values: sortedData.map(d => parseFloat(d.value))
                 };
             } catch (error) {
                 console.error("API-Fehler:", error);

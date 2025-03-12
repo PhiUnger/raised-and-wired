@@ -5,21 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenSenseMap - Live Sensor Daten</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
     <style>
         body { 
             font-family: Arial, sans-serif; 
             text-align: center; 
-            margin: 20px; 
+            margin: 0; 
+            padding: 10px;
+            background-color: #f4f4f4;
         }
         .chart-container { 
-            width: 90%; 
-            max-width: 800px; 
+            width: 95%; 
+            max-width: 500px; 
             margin: 20px auto; 
-            position: relative; 
+            background: white;
+            padding: 15px;
+            padding-bottom: 100px; /* Extra space for x-axis labels */
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            height: 280px; /* Slightly increased height */
+            position: relative;
+        }
+        h1 {
+            font-size: 1.5em;
+        }
+        h3 {
+            margin-bottom: 10px;
         }
         canvas { 
             width: 100% !important; 
-            height: 400px !important; 
+            height: 100% !important;
+        }
+        .reset-button {
+            margin-top: 5px;
+            padding: 5px 10px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            background: #007bff;
+            color: white;
+            border-radius: 5px;
         }
     </style>
 </head>
@@ -29,44 +54,50 @@
     <div class="chart-container">
         <h3>Temperatur (°C)</h3>
         <canvas id="tempChart"></canvas>
+        <button class="reset-button" onclick="resetZoom('tempChart')">Zoom zurücksetzen</button>
     </div>
 
     <div class="chart-container">
         <h3>Feuchtigkeit (%)</h3>
         <canvas id="humidityChart"></canvas>
+        <button class="reset-button" onclick="resetZoom('humidityChart')">Zoom zurücksetzen</button>
     </div>
 
     <div class="chart-container">
         <h3>Helligkeit (Lux)</h3>
         <canvas id="lightChart"></canvas>
+        <button class="reset-button" onclick="resetZoom('lightChart')">Zoom zurücksetzen</button>
     </div>
 
     <script>
-        const boxId = "67ced7745efb39000781a237"; // Deine SenseBox ID
+        const boxId = "67ced7745efb39000781a237";
         const sensors = {
             temperature: "67ced7745efb39000781a238",
             humidity: "67ced8595efb3900078339a4",
             light: "67cf16785efb390007f0de2b"
         };
-        const apiUrl = `https://api.opensensemap.org/boxes/${boxId}`;
+        const charts = {}; // Store chart instances
 
-        function formatLocalTime(utcString) {
+        function formatDate(utcString, detailed = false) {
             const date = new Date(utcString);
-            return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+            if (detailed) {
+                return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+            }
+            return date.toLocaleDateString("de-DE", { weekday: "short" }); // Mo, Di, Mi...
         }
 
         async function fetchSensorData() {
             try {
                 const now = new Date();
-                const fromDate = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)).toISOString(); // Last 48 hours
+                const fromDate = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)).toISOString();
 
                 const tempData = await fetchSensorHistory(sensors.temperature, fromDate);
                 const humidityData = await fetchSensorHistory(sensors.humidity, fromDate);
                 const lightData = await fetchSensorHistory(sensors.light, fromDate);
 
-                updateChart(tempChartObj, tempData.timestamps, tempData.values);
-                updateChart(humidityChartObj, humidityData.timestamps, humidityData.values);
-                updateChart(lightChartObj, lightData.timestamps, lightData.values);
+                updateChart("tempChart", "Temperatur (°C)", tempData);
+                updateChart("humidityChart", "Feuchtigkeit (%)", humidityData);
+                updateChart("lightChart", "Helligkeit (Lux)", lightData);
             } catch (error) {
                 console.error("Fehler beim Abrufen der Daten:", error);
             }
@@ -84,12 +115,12 @@
                     return { timestamps: [], values: [] };
                 }
 
-                // ✅ Sort data chronologically (oldest → newest)
+                // Sort by time (oldest → newest)
                 const sortedData = data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-                // ✅ Extract timestamps and values
                 return {
-                    timestamps: sortedData.map(d => formatLocalTime(d.createdAt)),
+                    timestamps: sortedData.map(d => formatDate(d.createdAt)), // Use weekdays initially
+                    detailedTimestamps: sortedData.map(d => formatDate(d.createdAt, true)), // Detailed timestamps for zooming
                     values: sortedData.map(d => parseFloat(d.value))
                 };
             } catch (error) {
@@ -98,68 +129,72 @@
             }
         }
 
-        function createChart(ctx, label, type = "line") {
-            return {
-                ctx: ctx,
-                type: type,
-                label: label,
-                chart: new Chart(ctx, {
-                    type: type,
-                    data: {
-                        labels: [],
-                        datasets: [{
-                            label: label,
-                            data: [],
-                            borderColor: type === "line" ? "blue" : "orange",
-                            backgroundColor: type === "bar" ? "rgba(255, 165, 0, 0.5)" : "transparent",
-                            borderWidth: 2,
-                            fill: false
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: { title: { display: true, text: "Zeit" } },
-                            y: { title: { display: true, text: label } }
-                        }
-                    }
-                })
-            };
-        }
+        function updateChart(canvasId, label, data) {
+            const ctx = document.getElementById(canvasId).getContext("2d");
 
-        function updateChart(chartObj, labels, data) {
-            chartObj.chart.destroy();
-            chartObj.chart = new Chart(chartObj.ctx, {
-                type: chartObj.type,
+            if (charts[canvasId]) {
+                charts[canvasId].destroy(); // Destroy old chart
+            }
+
+            charts[canvasId] = new Chart(ctx, {
+                type: "bar",
                 data: {
-                    labels: labels,
+                    labels: data.timestamps, // Default labels (weekday view)
                     datasets: [{
-                        label: chartObj.label,
-                        data: data,
-                        borderColor: chartObj.type === "line" ? "blue" : "orange",
-                        backgroundColor: chartObj.type === "bar" ? "rgba(255, 165, 0, 0.5)" : "transparent",
-                        borderWidth: 2,
-                        fill: false
+                        label: label,
+                        data: data.values,
+                        backgroundColor: "rgba(75, 192, 192, 0.6)",
+                        borderColor: "rgba(75, 192, 192, 1)",
+                        borderWidth: 1
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: {
+                        duration: 800,
+                        easing: "easeInOutQuad"
+                    },
                     scales: {
-                        x: { title: { display: true, text: "Zeit" } },
-                        y: { title: { display: true, text: chartObj.label } }
+                        x: { 
+                            title: { display: true, text: "Zeit" } 
+                        },
+                        y: { 
+                            title: { display: true, text: label }, 
+                            beginAtZero: true 
+                        }
+                    },
+                    plugins: {
+                        zoom: {
+                            pan: { enabled: true, mode: "x" },
+                            zoom: { 
+                                wheel: { enabled: true }, 
+                                pinch: { enabled: true }, 
+                                mode: "x",
+                                onZoomComplete: ({chart}) => {
+                                    // When zooming in, update x-axis with detailed timestamps
+                                    const zoomFactor = chart.getZoomLevel();
+                                    if (zoomFactor > 1.5) {
+                                        chart.data.labels = data.detailedTimestamps;
+                                    } else {
+                                        chart.data.labels = data.timestamps;
+                                    }
+                                    chart.update();
+                                }
+                            }
+                        }
                     }
                 }
             });
         }
 
-        // Initialisiere die Charts
-        const tempChartObj = createChart(document.getElementById("tempChart").getContext("2d"), "Temperatur (°C)");
-        const humidityChartObj = createChart(document.getElementById("humidityChart").getContext("2d"), "Feuchtigkeit (%)");
-        const lightChartObj = createChart(document.getElementById("lightChart").getContext("2d"), "Helligkeit (Lux)", "bar");
+        function resetZoom(canvasId) {
+            if (charts[canvasId]) {
+                charts[canvasId].resetZoom();
+            }
+        }
 
-        // Daten abrufen und alle 60 Sekunden aktualisieren
+        // Fetch data and refresh every 60 seconds
         fetchSensorData();
         setInterval(fetchSensorData, 60000);
     </script>

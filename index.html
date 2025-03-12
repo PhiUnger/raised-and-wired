@@ -4,69 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenSenseMap - Live Sensor Daten</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            margin: 0; 
-            padding: 10px;
-            background-color: #f4f4f4;
-        }
-        .chart-container { 
-            width: 95%; 
-            max-width: 500px; 
-            margin: 20px auto; 
-            background: white;
-            padding: 15px;
-            padding-bottom: 100px; /* Extra space for x-axis labels */
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            height: 280px; /* Slightly increased height */
-            position: relative;
-        }
-        h1 {
-            font-size: 1.5em;
-        }
-        h3 {
-            margin-bottom: 10px;
-        }
-        canvas { 
-            width: 100% !important; 
-            height: 100% !important;
-        }
-        .reset-button {
-            margin-top: 5px;
-            padding: 5px 10px;
-            font-size: 14px;
-            cursor: pointer;
-            border: none;
-            background: #007bff;
-            color: white;
-            border-radius: 5px;
-        }
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; }
+        .chart-container { width: 95%; max-width: 600px; margin: 20px auto; background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
     </style>
 </head>
 <body>
-    <h1>Live Sensor Daten von OpenSenseMap</h1>
-
+    <h1>InnRaum³ Passau</h1>
+    <h2>Teilautomatisiertes Forschungshochbeet</h2>
+    <h2>Live Sensor Daten von OpenSenseMap</h2>
+    
     <div class="chart-container">
-        <h3>Temperatur (°C)</h3>
-        <canvas id="tempChart"></canvas>
-        <button class="reset-button" onclick="resetZoom('tempChart')">Zoom zurücksetzen</button>
+        <div id="tempChart" class="plot-container"></div>
     </div>
 
     <div class="chart-container">
-        <h3>Feuchtigkeit (%)</h3>
-        <canvas id="humidityChart"></canvas>
-        <button class="reset-button" onclick="resetZoom('humidityChart')">Zoom zurücksetzen</button>
+        <div id="humidityChart" class="plot-container"></div>
     </div>
 
     <div class="chart-container">
-        <h3>Helligkeit (Lux)</h3>
-        <canvas id="lightChart"></canvas>
-        <button class="reset-button" onclick="resetZoom('lightChart')">Zoom zurücksetzen</button>
+        <div id="lightChart" class="plot-container"></div>
     </div>
 
     <script>
@@ -76,35 +34,13 @@
             humidity: "67ced8595efb3900078339a4",
             light: "67cf16785efb390007f0de2b"
         };
-        const charts = {}; // Store chart instances
+        let cachedData = {}; // Store all fetched data
 
-        function formatDate(utcString, detailed = false) {
-            const date = new Date(utcString);
-            if (detailed) {
-                return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-            }
-            return date.toLocaleDateString("de-DE", { weekday: "short" }); // Mo, Di, Mi...
-        }
+        async function fetchSensorData(sensorId) {
+            const now = new Date().toISOString();
+            const aMonthAgo = new Date(new Date().getTime() - (28 * 24 * 60 * 60 * 1000)).toISOString();
+            const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${aMonthAgo}&to-date=${now}&format=json`;
 
-        async function fetchSensorData() {
-            try {
-                const now = new Date();
-                const fromDate = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)).toISOString();
-
-                const tempData = await fetchSensorHistory(sensors.temperature, fromDate);
-                const humidityData = await fetchSensorHistory(sensors.humidity, fromDate);
-                const lightData = await fetchSensorHistory(sensors.light, fromDate);
-
-                updateChart("tempChart", "Temperatur (°C)", tempData);
-                updateChart("humidityChart", "Feuchtigkeit (%)", humidityData);
-                updateChart("lightChart", "Helligkeit (Lux)", lightData);
-            } catch (error) {
-                console.error("Fehler beim Abrufen der Daten:", error);
-            }
-        }
-
-        async function fetchSensorHistory(sensorId, fromDate) {
-            const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${fromDate}&format=json`;
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`Fehler beim Abrufen von Sensor ${sensorId}`);
@@ -119,8 +55,7 @@
                 const sortedData = data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
                 return {
-                    timestamps: sortedData.map(d => formatDate(d.createdAt)), // Use weekdays initially
-                    detailedTimestamps: sortedData.map(d => formatDate(d.createdAt, true)), // Detailed timestamps for zooming
+                    timestamps: sortedData.map(d => new Date(d.createdAt).toISOString()),
                     values: sortedData.map(d => parseFloat(d.value))
                 };
             } catch (error) {
@@ -129,74 +64,56 @@
             }
         }
 
-        function updateChart(canvasId, label, data) {
-            const ctx = document.getElementById(canvasId).getContext("2d");
+        async function updatePlotlyChart(sensorId, chartId, label) {
+            let data = await fetchSensorData(sensorId);
+            cachedData[sensorId] = data; // Store in cache
 
-            if (charts[canvasId]) {
-                charts[canvasId].destroy(); // Destroy old chart
-            }
-
-            charts[canvasId] = new Chart(ctx, {
-                type: "bar",
-                data: {
-                    labels: data.timestamps, // Default labels (weekday view)
-                    datasets: [{
-                        label: label,
-                        data: data.values,
-                        backgroundColor: "rgba(75, 192, 192, 0.6)",
-                        borderColor: "rgba(75, 192, 192, 1)",
-                        borderWidth: 1
-                    }]
+            Plotly.newPlot(chartId, [{
+                x: data.timestamps,
+                y: data.values,
+                mode: 'lines+markers',
+                type: 'scatter',
+                marker: { color: 'rgba(75, 192, 192, 0.6)' },
+                line: { color: 'rgba(0, 0, 255, 0.6)' }
+            }], {
+                title: label,
+                xaxis: { 
+                    title: "Zeit", 
+                    type: "date", 
+                    rangeselector: { 
+                        buttons: [
+                            { count: 1, label: '1d', step: 'day', stepmode: 'backward' },
+                            { count: 7, label: '1w', step: 'day', stepmode: 'backward' },
+                            { step: 'all', label: 'All' }
+                        ]
+                    },
+                    rangeslider: { visible: true }
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: {
-                        duration: 800,
-                        easing: "easeInOutQuad"
-                    },
-                    scales: {
-                        x: { 
-                            title: { display: true, text: "Zeit" } 
-                        },
-                        y: { 
-                            title: { display: true, text: label }, 
-                            beginAtZero: true 
-                        }
-                    },
-                    plugins: {
-                        zoom: {
-                            pan: { enabled: true, mode: "x" },
-                            zoom: { 
-                                wheel: { enabled: true }, 
-                                pinch: { enabled: true }, 
-                                mode: "x",
-                                onZoomComplete: ({chart}) => {
-                                    // When zooming in, update x-axis with detailed timestamps
-                                    const zoomFactor = chart.getZoomLevel();
-                                    if (zoomFactor > 1.5) {
-                                        chart.data.labels = data.detailedTimestamps;
-                                    } else {
-                                        chart.data.labels = data.timestamps;
-                                    }
-                                    chart.update();
-                                }
-                            }
-                        }
-                    }
-                }
+                yaxis: { title: label },
+                dragmode: "pan",
+                showlegend: false
+            },
+            { 
+                displayModeBar: true, 
+                modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d"],
+                displaylogo: false,
+                scrollZoom: true
             });
         }
 
-        function resetZoom(canvasId) {
-            if (charts[canvasId]) {
-                charts[canvasId].resetZoom();
-            }
+        async function initializeCharts() {
+            await updatePlotlyChart(sensors.temperature, "tempChart", "Temperatur (°C)");
+            await updatePlotlyChart(sensors.humidity, "humidityChart", "Feuchtigkeit (%)");
+            await updatePlotlyChart(sensors.light, "lightChart", "Helligkeit (Lux)");
         }
 
-        // Fetch data and refresh every 60 seconds
-        fetchSensorData();
-        setInterval(fetchSensorData, 60000);
+        setInterval(() => {
+            updatePlotlyChart(sensors.temperature, "tempChart", "Temperatur (°C)");
+            updatePlotlyChart(sensors.humidity, "humidityChart", "Feuchtigkeit (%)");
+            updatePlotlyChart(sensors.light, "lightChart", "Helligkeit (Lux)");
+        }, 60000);
+
+        initializeCharts();
     </script>
 </body>
 </html>

@@ -6,16 +6,62 @@
   <title>OpenSenseMap - Live Sensor Daten</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
-    body { font-family: sans-serif; background: #f4f4f4; text-align: center; }
-    canvas { max-width: 100%; }
-    .chart-container { max-width: 900px; margin: 20px auto; background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    .chart-container {
+      max-width: 900px;
+      margin: 20px auto;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    canvas {
+      min-height: 350px;
+    }
+    .range-buttons {
+      margin-top: 10px;
+    }
+    .range-buttons button {
+      margin: 0 5px;
+      padding: 5px 10px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      background-color: #0077be;
+      color: white;
+      cursor: pointer;
+    }
+    .range-buttons button.active {
+      background-color: #005f94;
+    }
+    #lastUpdated {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      color: #666;
+    }
   </style>
 </head>
 <body>
   <h1>InnRaum³ Passau</h1>
   <h2>Teilautomatisiertes Forschungshochbeet</h2>
   <h3>Live Sensor Daten</h3>
+
+  <div id="lastUpdated">Letztes Update: wird geladen...</div>
+
+  <div class="range-buttons">
+    <button data-range="1d">1 Tag</button>
+    <button data-range="7d" class="active">1 Woche</button>
+    <button data-range="30d">1 Monat</button>
+    <button data-range="all">Alles</button>
+  </div>
 
   <div class="chart-container"><canvas id="outsideChart"></canvas></div>
   <div class="chart-container"><canvas id="lightChart"></canvas></div>
@@ -24,6 +70,8 @@
 
   <script>
     const boxId = "67ced7745efb39000781a237";
+    let timeRange = "7d";
+
     const sensors = {
       air_temp: "67d9756db6275400077d4d18",
       humidity: "67d9756db6275400077d4d1a",
@@ -40,32 +88,60 @@
       soil_temp_q4: "67d963d9b62754000761c7b9"
     };
 
+    document.querySelectorAll('.range-buttons button').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.range-buttons button').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+        timeRange = button.getAttribute('data-range');
+        renderAll();
+      });
+    });
+
+    function getFromDate() {
+      const now = Date.now();
+      switch (timeRange) {
+        case "1d": return new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+        case "7d": return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+        case "30d": return new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+        case "all": return new Date(0).toISOString();
+      }
+    }
+
     async function fetchSensorData(sensorId) {
       const now = new Date().toISOString();
-      const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const from = getFromDate();
       const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${from}&to-date=${now}&format=json`;
-
       const res = await fetch(url);
       const raw = await res.json();
-
-      return raw
-        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-        .map(entry => ({
-          x: new Date(entry.createdAt),
-          y: parseFloat(entry.value)
-        }));
+      return raw.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(entry => ({ x: new Date(entry.createdAt), y: parseFloat(entry.value) }));
     }
 
     async function drawChart(ctx, datasets, yAxes, title) {
-      new Chart(ctx, {
+      if (ctx.chart) ctx.chart.destroy();
+      ctx.chart = new Chart(ctx, {
         type: 'line',
         data: { datasets },
         options: {
           responsive: true,
+          aspectRatio: 1.2,
           interaction: { mode: 'nearest', intersect: false },
-          plugins: { title: { display: true, text: title } },
+          plugins: {
+            title: { display: true, text: title },
+            zoom: {
+              pan: { enabled: true, mode: 'x' },
+              zoom: {
+                wheel: { enabled: true },
+                pinch: { enabled: true },
+                mode: 'x'
+              }
+            }
+          },
           scales: {
-            x: { type: 'time', time: { unit: 'hour' }, title: { text: 'Zeit', display: true } },
+            x: {
+              type: 'time',
+              time: { unit: 'hour' },
+              title: { text: 'Zeit', display: true }
+            },
             ...yAxes
           }
         }
@@ -76,6 +152,10 @@
       const temp = await fetchSensorData(sensors.air_temp);
       const humid = await fetchSensorData(sensors.humidity);
       const press = await fetchSensorData(sensors.pressure);
+
+      const allTimestamps = [...temp, ...humid, ...press].map(p => p.x.getTime());
+      const latest = allTimestamps.length ? new Date(Math.max(...allTimestamps)) : null;
+      document.getElementById("lastUpdated").textContent = latest ? `Letztes Update: ${latest.toLocaleString("de-DE")}` : "Keine Daten gefunden.";
 
       drawChart(document.getElementById('outsideChart'), [
         { label: 'Temperatur (°C)', data: temp, borderColor: 'red', yAxisID: 'y' },

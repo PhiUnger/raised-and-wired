@@ -139,7 +139,14 @@
           scales: {
             x: {
               type: 'time',
-              time: { unit: 'hour' },
+              time: {
+                unit: 'hour',
+                displayFormats: {
+                  hour: 'dd.MM. HH:mm',
+                  day: 'dd.MM. HH:mm'
+                },
+                tooltipFormat: 'dd.MM. HH:mm'
+              },
               title: { text: 'Zeit', display: true }
             },
             ...yAxes

@@ -7,34 +7,39 @@
     <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; }
-        .chart-container { width: 95%; max-width: 600px; margin: 20px auto; background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .chart-container { width: 95%; max-width: 800px; margin: 20px auto; background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
     </style>
 </head>
 <body>
     <h1>InnRaum³ Passau</h1>
     <h2>Teilautomatisiertes Forschungshochbeet</h2>
     <h2>Live Sensor Daten von OpenSenseMap</h2>
-    
-    <div class="chart-container">
-        <div id="tempChart" class="plot-container"></div>
-    </div>
 
-    <div class="chart-container">
-        <div id="humidityChart" class="plot-container"></div>
-    </div>
-
-    <div class="chart-container">
-        <div id="lightChart" class="plot-container"></div>
-    </div>
+    <div class="chart-container"><div id="outsideChart"></div></div>
+    <div class="chart-container"><div id="lightChart"></div></div>
+    <div class="chart-container"><div id="moistureChart"></div></div>
+    <div class="chart-container"><div id="soilTempChart"></div></div>
 
     <script>
         const boxId = "67ced7745efb39000781a237";
         const sensors = {
-            temperature: "67ced7745efb39000781a238",
-            humidity: "67ced8595efb3900078339a4",
-            light: "67cf16785efb390007f0de2b"
+            air_temp: "67d9756db6275400077d4d18",
+            humidity: "67d9756db6275400077d4d1a",
+            pressure: "67d9756db6275400077d4d1c",
+
+            light_covered: "67d9650db62754000763b9eb",
+            light_open: "67d9650db62754000763b9ed",
+
+            soil_moist_q1: "67d9730fb62754000779a126",
+            soil_moist_q2: "67d9735fb6275400077a1d02",
+            soil_moist_q3: "67d9735fb6275400077a1d04",
+            soil_moist_q4: "67d9735fb6275400077a1d08",
+
+            soil_temp_q1: "67d9639fb627540007616fcc",
+            soil_temp_q2: "67d963d9b62754000761c7b5",
+            soil_temp_q3: "67d963d9b62754000761c7b7",
+            soil_temp_q4: "67d963d9b62754000761c7b9"
         };
-        let cachedData = {}; // Store all fetched data
 
         async function fetchSensorData(sensorId) {
             const now = new Date().toISOString();
@@ -45,13 +50,6 @@
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`Fehler beim Abrufen von Sensor ${sensorId}`);
                 const data = await response.json();
-
-                if (!Array.isArray(data) || data.length === 0) {
-                    console.warn(`Keine Messwerte für Sensor ${sensorId}`);
-                    return { timestamps: [], values: [] };
-                }
-
-                // Sort by time (oldest → newest)
                 const sortedData = data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
                 return {
@@ -64,23 +62,24 @@
             }
         }
 
-        async function updatePlotlyChart(sensorId, chartId, label) {
-            let data = await fetchSensorData(sensorId);
-            cachedData[sensorId] = data; // Store in cache
+        async function createMultiLineChart(chartId, sensorMap, title, yLabel) {
+            const traces = [];
+            for (const [label, id] of Object.entries(sensorMap)) {
+                const data = await fetchSensorData(id);
+                traces.push({
+                    x: data.timestamps,
+                    y: data.values,
+                    mode: 'lines',
+                    name: label
+                });
+            }
 
-            Plotly.newPlot(chartId, [{
-                x: data.timestamps,
-                y: data.values,
-                mode: 'lines+markers',
-                type: 'scatter',
-                marker: { color: 'rgba(75, 192, 192, 0.6)' },
-                line: { color: 'rgba(0, 0, 255, 0.6)' }
-            }], {
-                title: label,
-                xaxis: { 
-                    title: "Zeit", 
-                    type: "date", 
-                    rangeselector: { 
+            Plotly.newPlot(chartId, traces, {
+                title: title,
+                xaxis: {
+                    title: "Zeit",
+                    type: "date",
+                    rangeselector: {
                         buttons: [
                             { count: 1, label: '1d', step: 'day', stepmode: 'backward' },
                             { count: 7, label: '1w', step: 'day', stepmode: 'backward' },
@@ -89,31 +88,45 @@
                     },
                     rangeslider: { visible: true }
                 },
-                yaxis: { title: label },
-                dragmode: "pan",
-                showlegend: false
-            },
-            { 
-                displayModeBar: true, 
+                yaxis: { title: yLabel },
+                dragmode: "pan"
+            }, {
+                displayModeBar: true,
                 modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d"],
                 displaylogo: false,
                 scrollZoom: true
             });
         }
 
-        async function initializeCharts() {
-            await updatePlotlyChart(sensors.temperature, "tempChart", "Temperatur (°C)");
-            await updatePlotlyChart(sensors.humidity, "humidityChart", "Feuchtigkeit (%)");
-            await updatePlotlyChart(sensors.light, "lightChart", "Helligkeit (Lux)");
+        async function renderAllCharts() {
+            await createMultiLineChart("outsideChart", {
+                "Außentemperatur (°C)": sensors.air_temp,
+                "Luftfeuchtigkeit (%)": sensors.humidity,
+                "Luftdruck (hPa)": sensors.pressure
+            }, "Außenbedingungen", "Wert");
+
+            await createMultiLineChart("lightChart", {
+                "Licht (überdacht)": sensors.light_covered,
+                "Licht (frei)": sensors.light_open
+            }, "Lichtverhältnisse", "Helligkeit (Lux)");
+
+            await createMultiLineChart("moistureChart", {
+                "Bodenfeuchte Q1": sensors.soil_moist_q1,
+                "Bodenfeuchte Q2": sensors.soil_moist_q2,
+                "Bodenfeuchte Q3": sensors.soil_moist_q3,
+                "Bodenfeuchte Q4": sensors.soil_moist_q4
+            }, "Bodenfeuchtigkeit", "%");
+
+            await createMultiLineChart("soilTempChart", {
+                "Bodentemperatur Q1": sensors.soil_temp_q1,
+                "Bodentemperatur Q2": sensors.soil_temp_q2,
+                "Bodentemperatur Q3": sensors.soil_temp_q3,
+                "Bodentemperatur Q4": sensors.soil_temp_q4
+            }, "Bodentemperatur", "°C");
         }
 
-        setInterval(() => {
-            updatePlotlyChart(sensors.temperature, "tempChart", "Temperatur (°C)");
-            updatePlotlyChart(sensors.humidity, "humidityChart", "Feuchtigkeit (%)");
-            updatePlotlyChart(sensors.light, "lightChart", "Helligkeit (Lux)");
-        }, 60000);
-
-        initializeCharts();
+        renderAllCharts();
+        setInterval(renderAllCharts, 60000);
     </script>
 </body>
 </html>

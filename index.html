@@ -1,132 +1,133 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenSenseMap - Live Sensor Daten</title>
-    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; }
-        .chart-container { width: 95%; max-width: 800px; margin: 20px auto; background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenSenseMap - Live Sensor Daten</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    body { font-family: sans-serif; background: #f4f4f4; text-align: center; }
+    canvas { max-width: 100%; }
+    .chart-container { max-width: 900px; margin: 20px auto; background: white; padding: 10px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+  </style>
 </head>
 <body>
-    <h1>InnRaum³ Passau</h1>
-    <h2>Teilautomatisiertes Forschungshochbeet</h2>
-    <h2>Live Sensor Daten von OpenSenseMap</h2>
+  <h1>InnRaum³ Passau</h1>
+  <h2>Teilautomatisiertes Forschungshochbeet</h2>
+  <h3>Live Sensor Daten</h3>
 
-    <div class="chart-container"><div id="outsideChart"></div></div>
-    <div class="chart-container"><div id="lightChart"></div></div>
-    <div class="chart-container"><div id="moistureChart"></div></div>
-    <div class="chart-container"><div id="soilTempChart"></div></div>
+  <div class="chart-container"><canvas id="outsideChart"></canvas></div>
+  <div class="chart-container"><canvas id="lightChart"></canvas></div>
+  <div class="chart-container"><canvas id="moistureChart"></canvas></div>
+  <div class="chart-container"><canvas id="soilTempChart"></canvas></div>
 
-    <script>
-        const boxId = "67ced7745efb39000781a237";
-        const sensors = {
-            air_temp: "67d9756db6275400077d4d18",
-            humidity: "67d9756db6275400077d4d1a",
-            pressure: "67d9756db6275400077d4d1c",
+  <script>
+    const boxId = "67ced7745efb39000781a237";
+    const sensors = {
+      air_temp: "67d9756db6275400077d4d18",
+      humidity: "67d9756db6275400077d4d1a",
+      pressure: "67d9756db6275400077d4d1c",
+      light_covered: "67d9650db62754000763b9eb",
+      light_open: "67d9650db62754000763b9ed",
+      soil_moist_q1: "67d9730fb62754000779a126",
+      soil_moist_q2: "67d9735fb6275400077a1d02",
+      soil_moist_q3: "67d9735fb6275400077a1d04",
+      soil_moist_q4: "67d9735fb6275400077a1d08",
+      soil_temp_q1: "67d9639fb627540007616fcc",
+      soil_temp_q2: "67d963d9b62754000761c7b5",
+      soil_temp_q3: "67d963d9b62754000761c7b7",
+      soil_temp_q4: "67d963d9b62754000761c7b9"
+    };
 
-            light_covered: "67d9650db62754000763b9eb",
-            light_open: "67d9650db62754000763b9ed",
+    async function fetchSensorData(sensorId) {
+      const now = new Date().toISOString();
+      const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${from}&to-date=${now}&format=json`;
 
-            soil_moist_q1: "67d9730fb62754000779a126",
-            soil_moist_q2: "67d9735fb6275400077a1d02",
-            soil_moist_q3: "67d9735fb6275400077a1d04",
-            soil_moist_q4: "67d9735fb6275400077a1d08",
+      const res = await fetch(url);
+      const raw = await res.json();
 
-            soil_temp_q1: "67d9639fb627540007616fcc",
-            soil_temp_q2: "67d963d9b62754000761c7b5",
-            soil_temp_q3: "67d963d9b62754000761c7b7",
-            soil_temp_q4: "67d963d9b62754000761c7b9"
-        };
+      return raw
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+        .map(entry => ({
+          x: new Date(entry.createdAt),
+          y: parseFloat(entry.value)
+        }));
+    }
 
-        async function fetchSensorData(sensorId) {
-            const now = new Date().toISOString();
-            const aMonthAgo = new Date(new Date().getTime() - (28 * 24 * 60 * 60 * 1000)).toISOString();
-            const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${aMonthAgo}&to-date=${now}&format=json`;
-
-            try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`Fehler beim Abrufen von Sensor ${sensorId}`);
-                const data = await response.json();
-                const sortedData = data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-                return {
-                    timestamps: sortedData.map(d => new Date(d.createdAt).toISOString()),
-                    values: sortedData.map(d => parseFloat(d.value))
-                };
-            } catch (error) {
-                console.error("API-Fehler:", error);
-                return { timestamps: [], values: [] };
-            }
+    async function drawChart(ctx, datasets, yAxes, title) {
+      new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          responsive: true,
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: { title: { display: true, text: title } },
+          scales: {
+            x: { type: 'time', time: { unit: 'hour' }, title: { text: 'Zeit', display: true } },
+            ...yAxes
+          }
         }
+      });
+    }
 
-        async function createMultiLineChart(chartId, sensorMap, title, yLabel) {
-            const traces = [];
-            for (const [label, id] of Object.entries(sensorMap)) {
-                const data = await fetchSensorData(id);
-                traces.push({
-                    x: data.timestamps,
-                    y: data.values,
-                    mode: 'lines',
-                    name: label
-                });
-            }
+    async function renderAll() {
+      const temp = await fetchSensorData(sensors.air_temp);
+      const humid = await fetchSensorData(sensors.humidity);
+      const press = await fetchSensorData(sensors.pressure);
 
-            Plotly.newPlot(chartId, traces, {
-                title: title,
-                xaxis: {
-                    title: "Zeit",
-                    type: "date",
-                    rangeselector: {
-                        buttons: [
-                            { count: 1, label: '1d', step: 'day', stepmode: 'backward' },
-                            { count: 7, label: '1w', step: 'day', stepmode: 'backward' },
-                            { step: 'all', label: 'All' }
-                        ]
-                    },
-                    rangeslider: { visible: true }
-                },
-                yaxis: { title: yLabel },
-                dragmode: "pan"
-            }, {
-                displayModeBar: true,
-                modeBarButtonsToRemove: ["zoom2d", "select2d", "lasso2d"],
-                displaylogo: false,
-                scrollZoom: true
-            });
-        }
+      drawChart(document.getElementById('outsideChart'), [
+        { label: 'Temperatur (°C)', data: temp, borderColor: 'red', yAxisID: 'y' },
+        { label: 'Luftfeuchtigkeit (%)', data: humid, borderColor: 'blue', yAxisID: 'y1' },
+        { label: 'Luftdruck (hPa)', data: press, borderColor: 'green', yAxisID: 'y2' }
+      ], {
+        y: { type: 'linear', position: 'left', title: { display: true, text: '°C' } },
+        y1: { type: 'linear', position: 'right', title: { display: true, text: '%' }, grid: { drawOnChartArea: false } },
+        y2: { type: 'linear', position: 'right', offset: true, title: { display: true, text: 'hPa' }, grid: { drawOnChartArea: false } }
+      }, 'Außenbedingungen');
 
-        async function renderAllCharts() {
-            await createMultiLineChart("outsideChart", {
-                "Außentemperatur (°C)": sensors.air_temp,
-                "Luftfeuchtigkeit (%)": sensors.humidity,
-                "Luftdruck (hPa)": sensors.pressure
-            }, "Außenbedingungen", "Wert");
+      const light1 = await fetchSensorData(sensors.light_covered);
+      const light2 = await fetchSensorData(sensors.light_open);
 
-            await createMultiLineChart("lightChart", {
-                "Licht (überdacht)": sensors.light_covered,
-                "Licht (frei)": sensors.light_open
-            }, "Lichtverhältnisse", "Helligkeit (Lux)");
+      drawChart(document.getElementById('lightChart'), [
+        { label: 'Licht (überdacht)', data: light1, borderColor: 'orange' },
+        { label: 'Licht (frei)', data: light2, borderColor: 'goldenrod' }
+      ], {
+        y: { title: { display: true, text: 'Lux' } }
+      }, 'Lichtverhältnisse');
 
-            await createMultiLineChart("moistureChart", {
-                "Bodenfeuchte Q1": sensors.soil_moist_q1,
-                "Bodenfeuchte Q2": sensors.soil_moist_q2,
-                "Bodenfeuchte Q3": sensors.soil_moist_q3,
-                "Bodenfeuchte Q4": sensors.soil_moist_q4
-            }, "Bodenfeuchtigkeit", "%");
+      const moist1 = await fetchSensorData(sensors.soil_moist_q1);
+      const moist2 = await fetchSensorData(sensors.soil_moist_q2);
+      const moist3 = await fetchSensorData(sensors.soil_moist_q3);
+      const moist4 = await fetchSensorData(sensors.soil_moist_q4);
 
-            await createMultiLineChart("soilTempChart", {
-                "Bodentemperatur Q1": sensors.soil_temp_q1,
-                "Bodentemperatur Q2": sensors.soil_temp_q2,
-                "Bodentemperatur Q3": sensors.soil_temp_q3,
-                "Bodentemperatur Q4": sensors.soil_temp_q4
-            }, "Bodentemperatur", "°C");
-        }
+      drawChart(document.getElementById('moistureChart'), [
+        { label: 'Feuchte Q1', data: moist1, borderColor: '#0077be' },
+        { label: 'Feuchte Q2', data: moist2, borderColor: '#00bfff' },
+        { label: 'Feuchte Q3', data: moist3, borderColor: '#1e90ff' },
+        { label: 'Feuchte Q4', data: moist4, borderColor: '#4682b4' }
+      ], {
+        y: { title: { display: true, text: '%' } }
+      }, 'Bodenfeuchtigkeit');
 
-        renderAllCharts();
-        setInterval(renderAllCharts, 60000);
-    </script>
+      const soil1 = await fetchSensorData(sensors.soil_temp_q1);
+      const soil2 = await fetchSensorData(sensors.soil_temp_q2);
+      const soil3 = await fetchSensorData(sensors.soil_temp_q3);
+      const soil4 = await fetchSensorData(sensors.soil_temp_q4);
+
+      drawChart(document.getElementById('soilTempChart'), [
+        { label: 'Bodentemp Q1', data: soil1, borderColor: '#a52a2a' },
+        { label: 'Bodentemp Q2', data: soil2, borderColor: '#b22222' },
+        { label: 'Bodentemp Q3', data: soil3, borderColor: '#dc143c' },
+        { label: 'Bodentemp Q4', data: soil4, borderColor: '#8b0000' }
+      ], {
+        y: { title: { display: true, text: '°C' } }
+      }, 'Bodentemperatur');
+    }
+
+    renderAll();
+    setInterval(renderAll, 60000);
+  </script>
 </body>
 </html>

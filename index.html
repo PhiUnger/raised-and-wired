@@ -85,6 +85,7 @@
         <button data-range="7d" class="active">1 Woche</button>
         <button data-range="30d">1 Monat</button>
         <button data-range="all">Alles</button>
+        <button id="toggleSmoothing" style="margin-left: 20px; background-color: #888;">Glättung: Aus</button>
     </div>
 
     <div class="chart-container"><canvas id="outsideChart"></canvas></div>
@@ -95,6 +96,7 @@
     <script>
         const boxId = "67ced7745efb39000781a237";
         let timeRange = "7d";
+        let smoothing = false;
 
         const sensors = {
             air_temp: "67d9756db6275400077d4d18",
@@ -111,15 +113,36 @@
             soil_temp_q3: "67d963d9b62754000761c7b7",
             soil_temp_q4: "67d963d9b62754000761c7b9"
         };
-
-        document.querySelectorAll('.range-buttons button').forEach(button => {
+        document.querySelectorAll('.range-buttons button[data-range]').forEach(button => {
             button.addEventListener('click', () => {
-                document.querySelectorAll('.range-buttons button').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.range-buttons button[data-range]').forEach(b => b.classList.remove('active'));
                 button.classList.add('active');
                 timeRange = button.getAttribute('data-range');
                 renderAll();
             });
         });
+
+        document.getElementById('toggleSmoothing').addEventListener('click', () => {
+            smoothing = !smoothing;
+            const btn = document.getElementById('toggleSmoothing');
+            btn.textContent = `Glättung: ${smoothing ? 'An' : 'Aus'}`;
+            btn.style.backgroundColor = smoothing ? '#005f94' : '#888';
+
+            Chart.defaults.datasets.line.tension = smoothing ? 0.4 : 0;
+            Chart.defaults.datasets.line.cubicInterpolationMode = 'default';
+            renderAll();
+        });
+
+        function movingAverage(data, windowSize = 50) {
+            if (data.length < windowSize) return data;
+            const result = [];
+            for (let i = 0; i <= data.length - windowSize; i++) {
+                const slice = data.slice(i, i + windowSize);
+                const avg = slice.reduce((sum, point) => sum + point.y, 0) / windowSize;
+                result.push({ x: slice[windowSize - 1].x, y: avg });
+            }
+            return result;
+        }
 
         function getFromDate() {
             const now = Date.now();
@@ -180,13 +203,17 @@
         }
 
         async function renderAll() {
-            const temp = await fetchSensorData(sensors.air_temp);
-            const humid = await fetchSensorData(sensors.humidity);
-            const press = await fetchSensorData(sensors.pressure);
+            let temp = await fetchSensorData(sensors.air_temp);
+            if (smoothing) temp = movingAverage(temp);
+            let humid = await fetchSensorData(sensors.humidity);
+            if (smoothing) humid = movingAverage(humid);
+            let press = await fetchSensorData(sensors.pressure);
+            if (smoothing) press = movingAverage(press);
 
             Chart.defaults.datasets.line.borderWidth = 1.2;
             Chart.defaults.datasets.line.pointRadius = 0;
             Chart.defaults.plugins.legend.labels.usePointStyle = true;
+            Chart.defaults.datasets.line.tension = 0; // start with no smoothing
 
             const allTimestamps = [...temp, ...humid, ...press].map(p => p.x.getTime());
             const latest = allTimestamps.length ? new Date(Math.max(...allTimestamps)) : null;
@@ -202,8 +229,10 @@
                 y2: { type: 'linear', position: 'right', offset: true, title: { display: true, text: 'hPa' }, grid: { drawOnChartArea: false } }
             }, 'Außenbedingungen');
 
-            const light1 = await fetchSensorData(sensors.light_covered);
-            const light2 = await fetchSensorData(sensors.light_open);
+            let light1 = await fetchSensorData(sensors.light_covered);
+            if (smoothing) light1 = movingAverage(light1);
+            let light2 = await fetchSensorData(sensors.light_open);
+            if (smoothing) light2 = movingAverage(light2);
 
             drawChart(document.getElementById('lightChart'), [
                 { label: 'Licht Überd.', data: light1, borderColor: 'grey', backgroundColor: 'grey' },
@@ -212,10 +241,14 @@
                 y: { title: { display: true, text: 'Lux' } }
             }, 'Lichtverhältnisse');
 
-            const moist1 = await fetchSensorData(sensors.soil_moist_q1);
-            const moist2 = await fetchSensorData(sensors.soil_moist_q2);
-            const moist3 = await fetchSensorData(sensors.soil_moist_q3);
-            const moist4 = await fetchSensorData(sensors.soil_moist_q4);
+            let moist1 = await fetchSensorData(sensors.soil_moist_q1);
+            if (smoothing) moist1 = movingAverage(moist1);
+            let moist2 = await fetchSensorData(sensors.soil_moist_q2);
+            if (smoothing) moist2 = movingAverage(moist2);
+            let moist3 = await fetchSensorData(sensors.soil_moist_q3);
+            if (smoothing) moist3 = movingAverage(moist3);
+            let moist4 = await fetchSensorData(sensors.soil_moist_q4);
+            if (smoothing) moist4 = movingAverage(moist4);
 
             drawChart(document.getElementById('moistureChart'), [
                 { label: 'Q1: Pferdem. Überd.', data: moist1, borderColor: 'black', backgroundColor: 'black' },
@@ -226,10 +259,14 @@
                 y: { title: { display: true, text: '%' } }
             }, 'Bodenfeuchtigkeit');
 
-            const soil1 = await fetchSensorData(sensors.soil_temp_q1);
-            const soil2 = await fetchSensorData(sensors.soil_temp_q2);
-            const soil3 = await fetchSensorData(sensors.soil_temp_q3);
-            const soil4 = await fetchSensorData(sensors.soil_temp_q4);
+            let soil1 = await fetchSensorData(sensors.soil_temp_q1);
+            if (smoothing) soil1 = movingAverage(soil1);
+            let soil2 = await fetchSensorData(sensors.soil_temp_q2);
+            if (smoothing) soil2 = movingAverage(soil2);
+            let soil3 = await fetchSensorData(sensors.soil_temp_q3);
+            if (smoothing) soil3 = movingAverage(soil3);
+            let soil4 = await fetchSensorData(sensors.soil_temp_q4);
+            if (smoothing) soil4 = movingAverage(soil4);
 
             drawChart(document.getElementById('soilTempChart'), [
                 { label: 'Q1: Pferdem. Überd.', data: soil1, borderColor: 'black', backgroundColor: 'black' },

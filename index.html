@@ -1,220 +1,249 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OpenSenseMap - Live Sensor Daten</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-  <style>
-    body {
-      font-family: sans-serif;
-      background: #f4f4f4;
-      text-align: center;
-      margin: 0;
-      padding: 0;
-    }
-    .chart-container {
-      max-width: 900px;
-      margin: 20px auto;
-      background: white;
-      padding: 10px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-    canvas {
-      min-height: 350px;
-    }
-    .range-buttons {
-      margin-top: 10px;
-    }
-    .range-buttons button {
-      margin: 0 5px;
-      padding: 5px 10px;
-      font-size: 1rem;
-      border: none;
-      border-radius: 5px;
-      background-color: #0077be;
-      color: white;
-      cursor: pointer;
-    }
-    .range-buttons button.active {
-      background-color: #005f94;
-    }
-    #lastUpdated {
-      margin-top: 10px;
-      font-size: 0.9rem;
-      color: #666;
-    }
-  </style>
-</head>
-<body>
-  <h1>InnRaum³ Passau</h1>
-  <h2>Teilautomatisiertes Forschungshochbeet</h2>
-  <h3>Live Sensor Daten</h3>
-
-  <div id="lastUpdated">Letztes Update: wird geladen...</div>
-
-  <div class="range-buttons">
-    <button data-range="1d">1 Tag</button>
-    <button data-range="7d" class="active">1 Woche</button>
-    <button data-range="30d">1 Monat</button>
-    <button data-range="all">Alles</button>
-  </div>
-
-  <div class="chart-container"><canvas id="outsideChart"></canvas></div>
-  <div class="chart-container"><canvas id="lightChart"></canvas></div>
-  <div class="chart-container"><canvas id="moistureChart"></canvas></div>
-  <div class="chart-container"><canvas id="soilTempChart"></canvas></div>
-
-  <script>
-    const boxId = "67ced7745efb39000781a237";
-    let timeRange = "7d";
-
-    const sensors = {
-      air_temp: "67d9756db6275400077d4d18",
-      humidity: "67d9756db6275400077d4d1a",
-      pressure: "67d9756db6275400077d4d1c",
-      light_covered: "67d9650db62754000763b9eb",
-      light_open: "67d9650db62754000763b9ed",
-      soil_moist_q1: "67d9730fb62754000779a126",
-      soil_moist_q2: "67d9735fb6275400077a1d02",
-      soil_moist_q3: "67d9735fb6275400077a1d04",
-      soil_moist_q4: "67d9735fb6275400077a1d08",
-      soil_temp_q1: "67d9639fb627540007616fcc",
-      soil_temp_q2: "67d963d9b62754000761c7b5",
-      soil_temp_q3: "67d963d9b62754000761c7b7",
-      soil_temp_q4: "67d963d9b62754000761c7b9"
-    };
-
-    document.querySelectorAll('.range-buttons button').forEach(button => {
-      button.addEventListener('click', () => {
-        document.querySelectorAll('.range-buttons button').forEach(b => b.classList.remove('active'));
-        button.classList.add('active');
-        timeRange = button.getAttribute('data-range');
-        renderAll();
-      });
-    });
-
-    function getFromDate() {
-      const now = Date.now();
-      switch (timeRange) {
-        case "1d": return new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
-        case "7d": return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
-        case "30d": return new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
-        case "all": return new Date(0).toISOString();
-      }
-    }
-
-    async function fetchSensorData(sensorId) {
-      const now = new Date().toISOString();
-      const from = getFromDate();
-      const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${from}&to-date=${now}&format=json`;
-      const res = await fetch(url);
-      const raw = await res.json();
-      return raw.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(entry => ({ x: new Date(entry.createdAt), y: parseFloat(entry.value) }));
-    }
-
-    async function drawChart(ctx, datasets, yAxes, title) {
-      if (ctx.chart) ctx.chart.destroy();
-      ctx.chart = new Chart(ctx, {
-        type: 'line',
-        data: { datasets },
-        options: {
-          responsive: true,
-          aspectRatio: 1.2,
-          interaction: { mode: 'nearest', intersect: false },
-          plugins: {
-            title: { display: true, text: title },
-            zoom: {
-              pan: { enabled: true, mode: 'x' },
-              zoom: {
-                wheel: { enabled: true },
-                pinch: { enabled: true },
-                mode: 'x'
-              }
-            }
-          },
-          scales: {
-            x: {
-              type: 'time',
-              time: {
-                unit: 'hour',
-                displayFormats: {
-                  hour: 'dd.MM. HH:mm',
-                  day: 'dd.MM. HH:mm'
-                },
-                tooltipFormat: 'dd.MM. HH:mm'
-              },
-              title: { text: 'Zeit', display: true }
-            },
-            ...yAxes
-          }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenSenseMap - Live Sensor Daten</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f4f4f4;
+            text-align: center;
+            margin: 0;
+            padding: 0;
         }
-      });
-    }
 
-    async function renderAll() {
-      const temp = await fetchSensorData(sensors.air_temp);
-      const humid = await fetchSensorData(sensors.humidity);
-      const press = await fetchSensorData(sensors.pressure);
+        .chart-container {
+            max-width: 900px;
+            margin: 20px auto;
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
 
-      const allTimestamps = [...temp, ...humid, ...press].map(p => p.x.getTime());
-      const latest = allTimestamps.length ? new Date(Math.max(...allTimestamps)) : null;
-      document.getElementById("lastUpdated").textContent = latest ? `Letztes Update: ${latest.toLocaleString("de-DE")}` : "Keine Daten gefunden.";
+        canvas {
+            min-height: 350px;
+        }
 
-      drawChart(document.getElementById('outsideChart'), [
-        { label: 'Temperatur (°C)', data: temp, borderColor: 'red', yAxisID: 'y' },
-        { label: 'Luftfeuchtigkeit (%)', data: humid, borderColor: 'blue', yAxisID: 'y1' },
-        { label: 'Luftdruck (hPa)', data: press, borderColor: 'green', yAxisID: 'y2' }
-      ], {
-        y: { type: 'linear', position: 'left', title: { display: true, text: '°C' } },
-        y1: { type: 'linear', position: 'right', title: { display: true, text: '%' }, grid: { drawOnChartArea: false } },
-        y2: { type: 'linear', position: 'right', offset: true, title: { display: true, text: 'hPa' }, grid: { drawOnChartArea: false } }
-      }, 'Außenbedingungen');
+        .range-buttons {
+            margin-top: 10px;
+        }
 
-      const light1 = await fetchSensorData(sensors.light_covered);
-      const light2 = await fetchSensorData(sensors.light_open);
+        .range-buttons button {
+            margin: 0 5px;
+            padding: 5px 10px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 5px;
+            background-color: #0077be;
+            color: white;
+            cursor: pointer;
+        }
 
-      drawChart(document.getElementById('lightChart'), [
-        { label: 'Licht (überdacht)', data: light1, borderColor: 'orange' },
-        { label: 'Licht (frei)', data: light2, borderColor: 'goldenrod' }
-      ], {
-        y: { title: { display: true, text: 'Lux' } }
-      }, 'Lichtverhältnisse');
+        .range-buttons button.active {
+            background-color: #005f94;
+        }
 
-      const moist1 = await fetchSensorData(sensors.soil_moist_q1);
-      const moist2 = await fetchSensorData(sensors.soil_moist_q2);
-      const moist3 = await fetchSensorData(sensors.soil_moist_q3);
-      const moist4 = await fetchSensorData(sensors.soil_moist_q4);
+        #lastUpdated {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+    </style>
+</head>
 
-      drawChart(document.getElementById('moistureChart'), [
-        { label: 'Feuchte Q1', data: moist1, borderColor: '#0077be' },
-        { label: 'Feuchte Q2', data: moist2, borderColor: '#00bfff' },
-        { label: 'Feuchte Q3', data: moist3, borderColor: '#1e90ff' },
-        { label: 'Feuchte Q4', data: moist4, borderColor: '#4682b4' }
-      ], {
-        y: { title: { display: true, text: '%' } }
-      }, 'Bodenfeuchtigkeit');
+<body>
+    <div style="text-align: center; margin-top: 20px;">
+        <div
+            style="display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 10px;">
+            <img src="tushilogo.png" alt="TUSHI Logo" style="height: 60px; object-fit: contain;">
+            <img src="innraumlogo.png" alt="InnRaum Logo" style="height: 60px; object-fit: contain;">
+            <img src="unipassaulogo.png" alt="Uni Passau Logo" style="height: 60px; object-fit: contain;">
+        </div>
+        <h1 style="margin: 0;">InnRaum³ Passau</h1>
+    </div>
+    <h2>Teilautomatisiertes Forschungshochbeet</h2>
+    <h3>Live Sensor Daten</h3>
 
-      const soil1 = await fetchSensorData(sensors.soil_temp_q1);
-      const soil2 = await fetchSensorData(sensors.soil_temp_q2);
-      const soil3 = await fetchSensorData(sensors.soil_temp_q3);
-      const soil4 = await fetchSensorData(sensors.soil_temp_q4);
+    <p style="margin: 0 auto 10px; max-width: 900px; font-size: 1rem;">
+        Das Hochbeet ist in 4 Zonen (Q1–Q4) aufgeteilt.<br>
+        Q1: Pferdemist Überdacht<br>
+        Q2: TUSHI Dünger Überdacht<br>
+        Q3: TUSHI Dünger Freifläche<br>
+        Q4: Pferdemist Freifläche
+    </p>
 
-      drawChart(document.getElementById('soilTempChart'), [
-        { label: 'Bodentemp Q1', data: soil1, borderColor: '#a52a2a' },
-        { label: 'Bodentemp Q2', data: soil2, borderColor: '#b22222' },
-        { label: 'Bodentemp Q3', data: soil3, borderColor: '#dc143c' },
-        { label: 'Bodentemp Q4', data: soil4, borderColor: '#8b0000' }
-      ], {
-        y: { title: { display: true, text: '°C' } }
-      }, 'Bodentemperatur');
-    }
+    <div id="lastUpdated">Letztes Update: wird geladen...</div>
 
-    renderAll();
-    setInterval(renderAll, 60000);
-  </script>
+    <div class="range-buttons">
+        <button data-range="1d">1 Tag</button>
+        <button data-range="7d" class="active">1 Woche</button>
+        <button data-range="30d">1 Monat</button>
+        <button data-range="all">Alles</button>
+    </div>
+
+    <div class="chart-container"><canvas id="outsideChart"></canvas></div>
+    <div class="chart-container"><canvas id="lightChart"></canvas></div>
+    <div class="chart-container"><canvas id="moistureChart"></canvas></div>
+    <div class="chart-container"><canvas id="soilTempChart"></canvas></div>
+
+    <script>
+        const boxId = "67ced7745efb39000781a237";
+        let timeRange = "7d";
+
+        const sensors = {
+            air_temp: "67d9756db6275400077d4d18",
+            humidity: "67d9756db6275400077d4d1a",
+            pressure: "67d9756db6275400077d4d1c",
+            light_covered: "67d9650db62754000763b9eb",
+            light_open: "67d9650db62754000763b9ed",
+            soil_moist_q1: "67d9730fb62754000779a126",
+            soil_moist_q2: "67d9735fb6275400077a1d02",
+            soil_moist_q3: "67d9735fb6275400077a1d04",
+            soil_moist_q4: "67d9735fb6275400077a1d08",
+            soil_temp_q1: "67d9639fb627540007616fcc",
+            soil_temp_q2: "67d963d9b62754000761c7b5",
+            soil_temp_q3: "67d963d9b62754000761c7b7",
+            soil_temp_q4: "67d963d9b62754000761c7b9"
+        };
+
+        document.querySelectorAll('.range-buttons button').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.range-buttons button').forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+                timeRange = button.getAttribute('data-range');
+                renderAll();
+            });
+        });
+
+        function getFromDate() {
+            const now = Date.now();
+            switch (timeRange) {
+                case "1d": return new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+                case "7d": return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+                case "30d": return new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+                case "all": return new Date(0).toISOString();
+            }
+        }
+
+        async function fetchSensorData(sensorId) {
+            const now = new Date().toISOString();
+            const from = getFromDate();
+            const url = `https://api.opensensemap.org/boxes/${boxId}/data/${sensorId}?from-date=${from}&to-date=${now}&format=json`;
+            const res = await fetch(url);
+            const raw = await res.json();
+            return raw.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(entry => ({ x: new Date(entry.createdAt), y: parseFloat(entry.value) }));
+        }
+
+        async function drawChart(ctx, datasets, yAxes, title) {
+            if (ctx.chart) ctx.chart.destroy();
+            ctx.chart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    aspectRatio: 1.2,
+                    interaction: { mode: 'nearest', intersect: false },
+                    plugins: {
+                        title: { display: true, text: title },
+                        zoom: {
+                            pan: { enabled: true, mode: 'x' },
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                mode: 'x'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: {
+                                    hour: 'dd.MM. HH:mm',
+                                    day: 'dd.MM. HH:mm'
+                                },
+                                tooltipFormat: 'dd.MM. HH:mm'
+                            },
+                            title: { text: 'Zeit', display: true }
+                        },
+                        ...yAxes
+                    }
+                }
+            });
+        }
+
+        async function renderAll() {
+            const temp = await fetchSensorData(sensors.air_temp);
+            const humid = await fetchSensorData(sensors.humidity);
+            const press = await fetchSensorData(sensors.pressure);
+
+            Chart.defaults.datasets.line.borderWidth = 1.2;
+            Chart.defaults.datasets.line.pointRadius = 0;
+            Chart.defaults.plugins.legend.labels.usePointStyle = true;
+
+            const allTimestamps = [...temp, ...humid, ...press].map(p => p.x.getTime());
+            const latest = allTimestamps.length ? new Date(Math.max(...allTimestamps)) : null;
+            document.getElementById("lastUpdated").textContent = latest ? `Letztes Update: ${latest.toLocaleString("de-DE")}` : "Keine Daten gefunden.";
+
+            drawChart(document.getElementById('outsideChart'), [
+                { label: 'Temperatur (°C)', data: temp, borderColor: 'red', backgroundColor: 'red', yAxisID: 'y' },
+                { label: 'Luftfeuchtigkeit (%)', data: humid, borderColor: 'blue', backgroundColor: 'blue', yAxisID: 'y1' },
+                { label: 'Luftdruck (hPa)', data: press, borderColor: 'green', backgroundColor: 'green', yAxisID: 'y2' }
+            ], {
+                y: { type: 'linear', position: 'left', title: { display: true, text: '°C' } },
+                y1: { type: 'linear', position: 'right', title: { display: true, text: '%' }, grid: { drawOnChartArea: false } },
+                y2: { type: 'linear', position: 'right', offset: true, title: { display: true, text: 'hPa' }, grid: { drawOnChartArea: false } }
+            }, 'Außenbedingungen');
+
+            const light1 = await fetchSensorData(sensors.light_covered);
+            const light2 = await fetchSensorData(sensors.light_open);
+
+            drawChart(document.getElementById('lightChart'), [
+                { label: 'Licht Überd.', data: light1, borderColor: 'grey', backgroundColor: 'grey' },
+                { label: 'Licht Frei', data: light2, borderColor: 'red', backgroundColor: 'red' }
+            ], {
+                y: { title: { display: true, text: 'Lux' } }
+            }, 'Lichtverhältnisse');
+
+            const moist1 = await fetchSensorData(sensors.soil_moist_q1);
+            const moist2 = await fetchSensorData(sensors.soil_moist_q2);
+            const moist3 = await fetchSensorData(sensors.soil_moist_q3);
+            const moist4 = await fetchSensorData(sensors.soil_moist_q4);
+
+            drawChart(document.getElementById('moistureChart'), [
+                { label: 'Q1: Pferdem. Überd.', data: moist1, borderColor: 'black', backgroundColor: 'black' },
+                { label: 'Q2: Tushi Überd.', data: moist2, borderColor: 'green', backgroundColor: 'green' },
+                { label: 'Q3: Tushi Frei', data: moist3, borderColor: 'lightgreen', backgroundColor: 'lightgreen' },
+                { label: 'Q4: Pferdem. Frei', data: moist4, borderColor: 'brown', backgroundColor: 'brown' }
+            ], {
+                y: { title: { display: true, text: '%' } }
+            }, 'Bodenfeuchtigkeit');
+
+            const soil1 = await fetchSensorData(sensors.soil_temp_q1);
+            const soil2 = await fetchSensorData(sensors.soil_temp_q2);
+            const soil3 = await fetchSensorData(sensors.soil_temp_q3);
+            const soil4 = await fetchSensorData(sensors.soil_temp_q4);
+
+            drawChart(document.getElementById('soilTempChart'), [
+                { label: 'Q1: Pferdem. Überd.', data: soil1, borderColor: 'black', backgroundColor: 'black' },
+                { label: 'Q2: Tushi Überd.', data: soil2, borderColor: 'green', backgroundColor: 'green' },
+                { label: 'Q3: Tushi Frei', data: soil3, borderColor: 'lightgreen', backgroundColor: 'lightgreen' },
+                { label: 'Q4: Pferdem. Frei', data: soil4, borderColor: 'brown', backgroundColor: 'brown' }
+            ], {
+                y: { title: { display: true, text: '°C' } }
+            }, 'Bodentemperatur');
+        }
+
+        renderAll();
+        setInterval(renderAll, 60000);
+    </script>
 </body>
+
 </html>
